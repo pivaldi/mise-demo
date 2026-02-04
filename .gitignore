@@ -1,0 +1,14 @@
+# mise
+.mise/
+# go
+/bin
+*.exe
+*.out
+# node
+node_modules/
+# misc
+.DS_Store
+
+# angular
+web/dist/
+web/.angular/

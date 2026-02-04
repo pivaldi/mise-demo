@@ -1,0 +1,92 @@
+[tools]
+go = "1.22"
+node = "20.11.1"
+postgres = "16"
+
+[env]
+APP_ENV = "dev"
+API_PORT = "8090"
+PHP_PORT = "8091"
+WEB_PORT = "5173"
+POSTGRES_HOST = "127.0.0.1"
+POSTGRES_PORT = "5438"
+POSTGRES_DB = "app"
+POSTGRES_USER = "app"
+POSTGRES_PASSWORD = "app"
+DATABASE_URL = "postgres://{{env.POSTGRES_USER}}:{{env.POSTGRES_PASSWORD}}@{{env.POSTGRES_HOST}}:{{env.POSTGRES_PORT}}/{{env.POSTGRES_DB}}?sslmode=disable"
+PGDATA = ".pgdata"
+
+[tasks.install]
+description = "Installe les toolchains définies dans [tools]"
+run = "mise install"
+
+[tasks.versions]
+description = "Affiche les versions (mise + outils) utilisées dans le repo"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+echo "mise: $(mise --version)"
+echo "go:  $(go version)"
+echo "node: $(node -v)"
+echo "php: $(php -v | head -n 1)"
+echo "docker: $(docker --version 2>/dev/null || echo '(non trouvé)')"
+'''
+
+[tasks."db:up"]
+description = "Démarre PostgreSQL via docker compose"
+run = "docker compose up -d db"
+
+[tasks."db:down"]
+description = "Arrête PostgreSQL"
+run = "docker compose down"
+
+[tasks."db:logs"]
+description = "Logs PostgreSQL"
+run = "docker compose logs -f db"
+
+[tasks."db:psql"]
+description = "Ouvre un psql dans le container"
+run = "docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB"
+
+[tasks."db:wait"]
+description = "Attend que Postgres réponde"
+run = "./scripts/wait-for-db.sh"
+
+[tasks."db:init"]
+description = "Crée la table de démo et injecte des données"
+depends = ["db:up", "db:wait"]
+run = "docker compose exec -T db psql -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB -f /docker-entrypoint-initdb.d/00_init.sql"
+
+[tasks."api:dev"]
+description = "Lance l'API Go (http://localhost:8090)"
+depends = ["db:up", "db:wait"]
+run = "go mod download && go run ."
+
+[tasks."php:serve"]
+description = "Lance le serveur PHP (http://localhost:8091)"
+run = "php -S localhost:$PHP_PORT -t php"
+
+[tasks."web:deps"]
+description = "Installe les dépendances du front (une fois)"
+run = "./scripts/ensure-web-deps.sh"
+
+[tasks."web:dev"]
+description = "Angular dev server (http://localhost:5173)"
+depends = ["web:deps"]
+run = "cd web && npm start"
+
+[tasks.dev]
+description = "Démarre DB + API Go + PHP + mini front en parallèle"
+depends = ["db:up", "db:wait"]
+run = [
+  { tasks = ["api:dev", "php:serve", "web:dev"] }
+]
+
+[tasks.test]
+description = "Tests Go"
+run = "go test ./..."
+
+[tasks.ci]
+description = "Pipeline CI local (versions + tests)"
+depends = ["versions"]
+run = [{ task = "test" }]
